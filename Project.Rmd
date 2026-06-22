@@ -1,0 +1,454 @@
+---
+title: "HW5"
+author: "Minh Nguyen"
+date: "2026-06-07"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(skimr)
+library(corrplot)
+
+# a. Load Data
+df <- read.csv("sp500_companies.csv")
+
+# drop long text column
+df <- df %>% select(-Longbusinesssummary)
+dim(df)     
+str(df)
+head(df)
+
+# b. Exploration
+
+skim(df)
+
+ggplot(df, aes(x = fct_infreq(Sector))) +
+  geom_bar(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Number of Companies per Sector", x = "Sector", y = "Count")
+
+ggplot(df, aes(x = Exchange)) +
+  geom_bar(fill = "darkorange") +
+  labs(title = "Distribution of Stock Exchanges")
+
+
+
+df %>%
+  select(Currentprice, Marketcap, Ebitda, Revenuegrowth, Fulltimeemployees, Weight) %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  facet_wrap(~variable, scales = "free") +
+  labs(title = "Distributions of Numerical Variables")
+
+
+df %>%
+  mutate(
+    log_Marketcap = log1p(Marketcap),
+    log_Employees = log1p(Fulltimeemployees),
+    log_Price     = log1p(Currentprice)
+  ) %>%
+  select(log_Marketcap, log_Employees, log_Price, Revenuegrowth, Weight) %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  facet_wrap(~variable, scales = "free") +
+  labs(title = "Log Transformed Distributions")
+
+# Relationship
+
+# Marketcap by Sector
+ggplot(df, aes(x = fct_reorder(Sector, Marketcap, median), y = log1p(Marketcap), fill = Sector)) +
+  geom_boxplot(show.legend = FALSE) +
+  coord_flip() +
+  labs(title = "Market Cap by Sector", x = "Sector", y = "log(Market Cap)")
+
+# Revenue Growth by Sector
+ggplot(df, aes(x = fct_reorder(Sector, Revenuegrowth, median, na.rm = TRUE),
+               y = Revenuegrowth, fill = Sector)) +
+  geom_boxplot(show.legend = FALSE) +
+  coord_flip() +
+  labs(title = "Revenue Growth by Sector", x = "Sector", y = "Revenue Growth")
+
+# Correlation matrix 
+num_df <- df %>%
+  select(Currentprice, Marketcap, Ebitda, Revenuegrowth, Fulltimeemployees, Weight) %>%
+  drop_na()
+
+cor_matrix <- cor(num_df)
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.cex = 0.8, addCoef.col = "black", number.cex = 0.7,
+         title = "Correlation Matrix", mar = c(0,0,1,0))
+
+# Part c 
+# cleaning
+library(tidyverse)
+colSums(is.na(df))
+
+df$Revenuegrowth[is.na(df$Revenuegrowth)] <- median(df$Revenuegrowth, na.rm = TRUE)
+
+df$Fulltimeemployees[is.na(df$Fulltimeemployees)] <- median(df$Fulltimeemployees, na.rm = TRUE)
+
+df <- df %>%
+  group_by(Sector) %>%
+  mutate(Ebitda = ifelse(is.na(Ebitda), median(Ebitda, na.rm = TRUE), Ebitda)) %>%
+  ungroup()
+
+df$State[is.na(df$State) | df$State == ""] <- "N/A"
+
+cat("Missing values after imputation:\n")
+colSums(is.na(df))
+
+
+par(mfrow = c(2, 3))
+boxplot(df$Currentprice,   main = "Current Price",    col = "steelblue")
+boxplot(df$Marketcap,      main = "Market Cap",        col = "steelblue")
+boxplot(df$Ebitda,         main = "EBITDA",            col = "steelblue")
+boxplot(df$Revenuegrowth,  main = "Revenue Growth",    col = "steelblue")
+boxplot(df$Fulltimeemployees, main = "Employees",      col = "steelblue")
+boxplot(df$Weight,         main = "Weight",            col = "steelblue")
+par(mfrow = c(1, 1))
+
+winsorize <- function(x, lower = 0.01, upper = 0.99) {
+  q <- quantile(x, probs = c(lower, upper), na.rm = TRUE)
+  x <- ifelse(x < q[1], q[1], x)
+  x <- ifelse(x > q[2], q[2], x)
+  return(x)
+}
+
+df$Currentprice      <- winsorize(df$Currentprice)
+df$Marketcap         <- winsorize(df$Marketcap)
+df$Ebitda            <- winsorize(df$Ebitda)
+df$Revenuegrowth     <- winsorize(df$Revenuegrowth)
+df$Fulltimeemployees <- winsorize(df$Fulltimeemployees)
+
+par(mfrow = c(2, 3))
+boxplot(df$Currentprice,      main = "Price (cleaned)",     col = "darkorange")
+boxplot(df$Marketcap,         main = "Market Cap (cleaned)", col = "darkorange")
+boxplot(df$Ebitda,            main = "EBITDA (cleaned)",     col = "darkorange")
+boxplot(df$Revenuegrowth,     main = "Rev Growth (cleaned)", col = "darkorange")
+boxplot(df$Fulltimeemployees, main = "Employees (cleaned)",  col = "darkorange")
+boxplot(df$Weight,            main = "Weight (cleaned)",     col = "darkorange")
+par(mfrow = c(1, 1))
+
+df$Sector   <- as.factor(df$Sector)
+df$Industry <- as.factor(df$Industry)
+df$Exchange <- as.factor(df$Exchange)
+df$Country  <- as.factor(df$Country)
+df$State    <- as.factor(df$State)
+
+cat("\nFinal dataset dimensions:", dim(df), "\n")
+skim(df)
+
+#part d
+
+# Data Preprocessing 
+
+library(tidyverse)
+
+df_model <- df %>%
+  select(-Symbol, -Shortname, -Longname, -City)
+
+df_model <- df_model %>%
+  mutate(
+    Exchange_NYQ = as.integer(Exchange == "NYQ"),
+    Exchange_NGM = as.integer(Exchange == "NGM"),
+    Exchange_PCX = as.integer(Exchange == "PCX"),
+    
+    Country_NonUS = as.integer(Country != "United States"),
+    
+
+        State_grouped = fct_lump_n(State, n = 5)
+  ) %>%
+
+    mutate(dummy = 1) %>%
+  pivot_wider(names_from = State_grouped, values_from = dummy,
+              names_prefix = "State_", values_fill = 0) %>%
+  select(-Exchange, -Country, -State)
+
+
+
+normalize <- function(x) {
+  return((x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))
+}
+
+df_model <- df_model %>%
+  mutate(
+    Currentprice_norm      = normalize(Currentprice),
+    Marketcap_norm         = normalize(Marketcap),
+    Ebitda_norm            = normalize(Ebitda),
+    Revenuegrowth_norm     = normalize(Revenuegrowth),
+    Fulltimeemployees_norm = normalize(Fulltimeemployees),
+    Weight_norm            = normalize(Weight)
+  ) %>%
+
+    select(-Currentprice, -Marketcap, -Ebitda,
+         -Revenuegrowth, -Fulltimeemployees, -Weight)
+
+cat("Preprocessed dataset dimensions:", dim(df_model), "\n")
+str(df_model)
+head(df_model)
+
+
+df_cluster <- df_model %>%
+  select(-Sector, -Industry) %>%
+  select(where(is.numeric))
+
+cat("\nClustering dataset dimensions:", dim(df_cluster), "\n")
+str(df_cluster)
+
+
+# part e: clustering 
+
+library(tidyverse)
+library(ggplot2)
+library(factoextra)  
+
+# elbow method 
+set.seed(42)
+
+wss <- map_dbl(1:10, function(k) {
+  kmeans(df_cluster, centers = k, nstart = 25)$tot.withinss
+})
+
+elbow_df <- data.frame(k = 1:10, wss = wss)
+
+ggplot(elbow_df, aes(x = k, y = wss)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(size = 3, color = "darkorange") +
+  scale_x_continuous(breaks = 1:10) +
+  labs(title = "Elbow Method: Choosing Number of Clusters",
+       x = "Number of Clusters (k)", y = "Total Within Cluster SS") +
+  theme_minimal()
+
+# Fit K-Means with chosen k
+
+k <- 8
+
+set.seed(42)
+kmeans_result <- kmeans(df_cluster, centers = k, nstart = 25)
+
+
+df_model$Cluster <- as.factor(kmeans_result$cluster)
+
+cat("Cluster sizes:\n")
+table(df_model$Cluster)
+
+pca_result <- prcomp(df_cluster, scale. = FALSE)  # already normalized
+
+pca_var <- summary(pca_result)$importance[2, 1:5]
+cat("\nVariance explained by first 5 PCs:\n")
+print(round(pca_var * 100, 2))
+
+pca_df <- data.frame(
+  PC1     = pca_result$x[, 1],
+  PC2     = pca_result$x[, 2],
+  Cluster = df_model$Cluster,
+  Sector  = df_model$Sector
+)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Cluster)) +
+  geom_point(alpha = 0.7, size = 2) +
+  labs(title = "PCA Projection: Colored by K-Means Cluster",
+       x = paste0("PC1 (", round(pca_var[1] * 100, 1), "% variance)"),
+       y = paste0("PC2 (", round(pca_var[2] * 100, 1), "% variance)")) +
+  theme_minimal()
+
+
+cluster_sector_table <- table(Cluster = df_model$Cluster,
+                              Sector  = df_model$Sector)
+print(cluster_sector_table)
+
+
+cluster_sector_df <- as.data.frame(cluster_sector_table)
+
+ggplot(cluster_sector_df, aes(x = Sector, y = Cluster, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 3) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Cluster vs Actual Sector",
+       fill = "Count")
+
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Sector)) +
+  geom_point(alpha = 0.7, size = 2) +
+  labs(title = "PCA Projection:  Colored by Actual Sector",
+       x = paste0("PC1 (", round(pca_var[1] * 100, 1), "% variance)"),
+       y = paste0("PC2 (", round(pca_var[2] * 100, 1), "% variance)")) +
+  theme_minimal() +
+  theme(legend.text = element_text(size = 7))
+
+
+
+# Part f Classification
+
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+
+#  Prepare data for classification
+
+df_class <- df_model %>%
+  select(-Cluster, -Industry) %>%
+  mutate(Sector = as.factor(Sector))
+
+table(df_class$Sector)
+
+# Train/Test split (80/20)
+set.seed(42)
+train_index <- createDataPartition(df_class$Sector, p = 0.8, list = FALSE)
+train_data  <- df_class[train_index, ]
+test_data   <- df_class[-train_index, ]
+
+cat("Training rows:", nrow(train_data), "\n")
+cat("Testing rows: ", nrow(test_data),  "\n")
+
+# Model 1: Decision Tree
+set.seed(42)
+
+cp_grid <- expand.grid(cp = seq(0.001, 0.05, by = 0.005))
+
+dt_model <- train(
+  Sector ~ .,
+  data      = train_data,
+  method    = "rpart",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid  = cp_grid
+)
+
+cat("\nBest Decision Tree cp:", dt_model$bestTune$cp, "\n")
+plot(dt_model, main = "Decision Tree: CV Accuracy by cp")
+
+rpart.plot(dt_model$finalModel, type = 4, extra = 101,
+           main = "Decision Tree", cex = 0.6)
+
+dt_preds <- predict(dt_model, test_data)
+dt_cm    <- confusionMatrix(dt_preds, test_data$Sector)
+cat("\nDecision Tree Accuracy:", round(dt_cm$overall["Accuracy"], 4), "\n")
+
+
+
+
+# Model 2: Random Forest 
+set.seed(42)
+
+rf_grid <- expand.grid(mtry = c(2, 4, 6, 8, 10))
+
+rf_model <- train(
+  Sector ~ .,
+  data      = train_data,
+  method    = "rf",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid  = rf_grid,
+  ntree     = 200
+)
+
+cat("\nBest Random Forest mtry:", rf_model$bestTune$mtry, "\n")
+plot(rf_model, main = "Random Forest: CV Accuracy by mtry")
+
+varImpPlot(rf_model$finalModel, main = "Random Forest: Variable Importance",
+           n.var = 10, col = "steelblue")
+
+rf_preds <- predict(rf_model, test_data)
+rf_cm    <- confusionMatrix(rf_preds, test_data$Sector)
+cat("\nRandom Forest Accuracy:", round(rf_cm$overall["Accuracy"], 4), "\n")
+
+# Compare both models
+cat("\n Model Comparison \n")
+cat("Decision Tree Accuracy: ", round(dt_cm$overall["Accuracy"], 4), "\n")
+cat("Random Forest Accuracy: ", round(rf_cm$overall["Accuracy"], 4), "\n")
+
+resamps <- resamples(list(DecisionTree = dt_model, RandomForest = rf_model))
+summary(resamps)
+bwplot(resamps, metric = "Accuracy", main = "Model Accuracy Comparison")
+
+
+
+# Part G: Evaluation
+
+library(caret)
+library(pROC)
+
+# Bin sectors into 2 groups
+
+growth_sectors <- c("Technology", "Consumer Cyclical", "Communication Services",
+                    "Financial Services", "Industrials")
+
+df_class2 <- df_class %>%
+  mutate(Sector_binary = as.factor(
+    ifelse(Sector %in% growth_sectors, "Growth", "Defensive")
+  ))
+
+table(df_class2$Sector_binary)
+
+# Train/Test split
+set.seed(42)
+train_index2 <- createDataPartition(df_class2$Sector_binary, p = 0.8, list = FALSE)
+train2 <- df_class2[train_index2, ] %>% select(-Sector)
+test2  <- df_class2[-train_index2, ] %>% select(-Sector)
+
+# Rebuild RF on binary
+set.seed(42)
+rf_binary <- train(
+  Sector_binary ~ .,
+  data      = train2,
+  method    = "rf",
+  trControl = trainControl(method = "cv", number = 5,
+                           classProbs = TRUE,   
+                           summaryFunction = twoClassSummary),
+  tuneGrid  = expand.grid(mtry = 4),  
+  metric    = "ROC",
+  ntree     = 200
+)
+
+#Predict on test set
+rf_preds2  <- predict(rf_binary, test2)
+rf_probs2  <- predict(rf_binary, test2, type = "prob")[, "Growth"]
+
+#  Confusion Matrix 
+cm2 <- confusionMatrix(rf_preds2, test2$Sector_binary, positive = "Growth")
+print(cm2)
+
+cat("\n Confusion Matrix \n")
+print(cm2$table)
+
+
+TP <- cm2$table["Growth", "Growth"]
+FP <- cm2$table["Growth", "Defensive"]
+FN <- cm2$table["Defensive", "Growth"]
+TN <- cm2$table["Defensive", "Defensive"]
+
+precision <- TP / (TP + FP)
+recall    <- TP / (TP + FN)
+f1        <- 2 * (precision * recall) / (precision + recall)
+accuracy  <- (TP + TN) / sum(cm2$table)
+
+
+cat("TP:", TP, " FP:", FP, " FN:", FN, " TN:", TN, "\n")
+cat("Precision:", round(precision, 4), "\n")
+cat("Recall:   ", round(recall,    4), "\n")
+cat("F1 Score: ", round(f1,        4), "\n")
+cat("Accuracy: ", round(accuracy,  4), "\n")
+
+# ROC curve 
+roc_obj <- roc(test2$Sector_binary, rf_probs2, levels = c("Defensive", "Growth"))
+
+plot(roc_obj,
+     col     = "steelblue",
+     lwd     = 2,
+     main    = paste0("ROC Curve: Random Forest (AUC = ",
+                      round(auc(roc_obj), 3), ")"),
+     xlab    = "False Positive Rate (1: Specificity)",
+     ylab    = "True Positive Rate (Sensitivity)")
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+```
